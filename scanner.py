@@ -819,6 +819,113 @@ def run_demo_scan(conn, weights: dict):
     return sample_candidates
 
 
+
+# ─── JSON EXPORT FOR DASHBOARD ──────────────────────────────────────────────
+
+def export_json(conn, results: list, too_late_list: list, scan_date: str, weights: dict):
+    """
+    Export scan results to results.json so the dashboard can read them.
+    This file gets committed back to GitHub by the nightly workflow.
+    """
+    c = conn.cursor()
+
+    # Overall stats
+    c.execute("SELECT COUNT(*), SUM(hit), AVG(spike_pct) FROM outcomes")
+    row = c.fetchone()
+    total_out = row[0] or 0
+    total_hits = row[1] or 0
+    avg_spike  = round(row[2] or 0, 1)
+    win_rate   = round((total_hits / total_out * 100) if total_out else 0, 1)
+
+    c.execute("SELECT COUNT(*) FROM scans WHERE too_late = 0")
+    total_scans = c.fetchone()[0]
+
+    # Recent history (last 14 nights)
+    c.execute("""
+        SELECT s.ticker, s.scan_date, s.combo_score,
+               s.catalyst_type, o.spike_pct, o.hit
+        FROM scans s
+        LEFT JOIN outcomes o ON o.scan_id = s.id
+        WHERE s.too_late = 0
+        ORDER BY s.scan_date DESC, s.combo_score DESC
+        LIMIT 30
+    """)
+    history = []
+    for row in c.fetchall():
+        history.append({
+            "ticker":     row[0],
+            "date":       row[1],
+            "combo_score":row[2],
+            "catalyst":   row[3],
+            "spike_pct":  round(row[4], 1) if row[4] else None,
+            "hit":        bool(row[5]) if row[5] is not None else None,
+        })
+
+    # Signal stats
+    c.execute("""
+        SELECT signal_name, win_rate, sample_size, avg_spike
+        FROM signal_stats
+        WHERE id IN (SELECT MAX(id) FROM signal_stats GROUP BY signal_name)
+    """)
+    signal_stats = {}
+    for row in c.fetchall():
+        signal_stats[row[0]] = {"win_rate": row[1], "sample": row[2], "avg_spike": row[3]}
+
+    # Clean results for JSON
+    def clean(r):
+        return {
+            "rank":         r.get("rank"),
+            "ticker":       r.get("ticker"),
+            "company":      r.get("company"),
+            "price":        r.get("price"),
+            "float_m":      r.get("float_m"),
+            "short_int":    r.get("short_int"),
+            "rvol":         r.get("rvol"),
+            "pop_score":    r.get("pop_score"),
+            "rumor_score":  r.get("rumor_score"),
+            "combo_score":  r.get("combo_score"),
+            "catalyst":     bool(r.get("catalyst")),
+            "low_float":    bool(r.get("is_low_float")),
+            "si_high":      bool(r.get("si_high")),
+            "unusual_vol":  bool(r.get("unusual_vol")),
+            "buzz":         bool(r.get("has_buzz")),
+            "upcoming_date":bool(r.get("upcoming_date")),
+            "options_flow": bool(r.get("options_flow")),
+            "si_rising":    bool(r.get("si_rising")),
+            "catalyst_type":r.get("catalyst_type"),
+            "catalyst_desc":r.get("catalyst_desc"),
+            "too_late":     bool(r.get("too_late")),
+            "too_late_reason": r.get("too_late_reason"),
+            "entry_idea":   r.get("entry_idea"),
+            "exit_idea":    r.get("exit_idea"),
+            "timing":       "Tonight AH" if r.get("combo_score", 0) >= 80 else "Premarket AM" if r.get("combo_score", 0) >= 65 else "Watch Only",
+        }
+
+    output = {
+        "scan_date":    scan_date,
+        "generated_at": datetime.now().isoformat(),
+        "stats": {
+            "total_candidates": len(results),
+            "too_late_count":   len(too_late_list),
+            "high_conviction":  sum(1 for r in results if r.get("combo_score", 0) >= 80),
+            "win_rate":         win_rate,
+            "total_scans":      total_scans,
+            "avg_spike":        avg_spike,
+        },
+        "weights":      weights,
+        "candidates":   [clean(r) for r in results],
+        "too_late":     [clean(r) for r in too_late_list],
+        "history":      history,
+        "signal_stats": signal_stats,
+    }
+
+    out_path = BASE_DIR / "results.json"
+    with open(out_path, "w") as f:
+        json.dump(output, f, indent=2)
+
+    print(f"  ✓ results.json exported ({len(results)} candidates, {len(too_late_list)} too late)")
+
+
 # ─── MAIN ────────────────────────────────────────────────────────────────────
 
 def main():
@@ -926,6 +1033,9 @@ def main():
             print(f"  🚫 TOO LATE (disqualified — catalyst widely reported):")
             for r in too_late_list:
                 print(f"     {r['ticker']}: {r.get('too_late_reason','')[:80]}")
+
+        # Export results.json for the live dashboard
+        export_json(conn, results, too_late_list, scan_date, weights)
 
     # ── STEP 3: REPORT ──
     if do_report:

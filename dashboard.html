@@ -1,0 +1,887 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sleeper Scanner — Live Dashboard</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@300;400;500;600&display=swap');
+
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
+
+:root{
+  --bg:#050407;
+  --s1:#0c0a10;
+  --s2:#100d16;
+  --b1:#1a1620;
+  --b2:#221d2c;
+  --gold:#f0c040;
+  --gold-d:rgba(240,192,64,0.07);
+  --green:#3dffa0;
+  --green-d:rgba(61,255,160,0.06);
+  --red:#ff4d6a;
+  --red-d:rgba(255,77,106,0.07);
+  --blue:#60a5fa;
+  --violet:#c084fc;
+  --orange:#fb923c;
+  --orange-d:rgba(251,146,60,0.07);
+  --text:#e8e0f5;
+  --mid:#8b80a8;
+  --dim:#4d4660;
+  --dimmer:#2a2438;
+}
+
+body{background:var(--bg);color:var(--text);font-family:'IBM Plex Sans',sans-serif;min-height:100vh;}
+
+body::before{
+  content:'';position:fixed;inset:0;pointer-events:none;
+  background:radial-gradient(ellipse at 15% 0%,rgba(240,192,64,0.05) 0%,transparent 50%),
+             radial-gradient(ellipse at 90% 5%,rgba(251,146,60,0.03) 0%,transparent 40%);
+}
+
+/* ─── SETUP OVERLAY ─── */
+.setup-overlay{
+  position:fixed;inset:0;background:rgba(5,4,7,0.97);z-index:200;
+  display:flex;align-items:center;justify-content:center;
+  animation:fadeIn 0.3s ease;
+}
+
+@keyframes fadeIn{from{opacity:0;}to{opacity:1;}}
+
+.setup-card{
+  background:var(--s1);border:1px solid var(--b2);border-radius:12px;
+  padding:2.5rem;max-width:520px;width:90%;
+}
+
+.sc-title{font-family:'Bebas Neue',sans-serif;font-size:1.8rem;letter-spacing:0.05em;
+  color:var(--gold);margin-bottom:0.3rem;}
+.sc-sub{font-family:'IBM Plex Mono',monospace;font-size:0.6rem;text-transform:uppercase;
+  letter-spacing:0.14em;color:var(--dim);margin-bottom:1.5rem;}
+
+.sc-label{font-family:'IBM Plex Mono',monospace;font-size:0.58rem;text-transform:uppercase;
+  letter-spacing:0.1em;color:var(--mid);margin-bottom:0.4rem;}
+
+.sc-input{
+  width:100%;background:var(--s2);border:1px solid var(--b2);border-radius:5px;
+  padding:0.65rem 0.9rem;color:var(--text);font-family:'IBM Plex Mono',monospace;
+  font-size:0.78rem;outline:none;margin-bottom:0.75rem;
+  transition:border-color 0.2s;
+}
+.sc-input:focus{border-color:var(--gold);}
+.sc-input::placeholder{color:var(--dim);}
+
+.sc-hint{font-size:0.68rem;color:var(--dim);margin-bottom:1.25rem;line-height:1.5;}
+.sc-hint a{color:var(--blue);text-decoration:none;}
+.sc-hint a:hover{text-decoration:underline;}
+
+.sc-btn{
+  width:100%;font-family:'IBM Plex Mono',monospace;font-size:0.7rem;font-weight:600;
+  text-transform:uppercase;letter-spacing:0.12em;padding:0.7rem;border-radius:5px;
+  background:var(--gold);color:#000;border:none;cursor:pointer;transition:all 0.2s;
+}
+.sc-btn:hover{background:#f5d060;box-shadow:0 0 20px rgba(240,192,64,0.3);}
+
+.sc-demo{
+  margin-top:0.75rem;width:100%;font-family:'IBM Plex Mono',monospace;font-size:0.62rem;
+  text-transform:uppercase;letter-spacing:0.1em;padding:0.55rem;border-radius:5px;
+  background:transparent;color:var(--dim);border:1px solid var(--b2);cursor:pointer;transition:all 0.2s;
+}
+.sc-demo:hover{color:var(--mid);border-color:var(--mid);}
+
+.sc-divider{text-align:center;font-family:'IBM Plex Mono',monospace;font-size:0.52rem;
+  color:var(--dim);margin:0.5rem 0;}
+
+/* ─── LOADING ─── */
+.loading{
+  position:fixed;inset:0;background:var(--bg);z-index:100;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1rem;
+}
+
+.loading-logo{font-family:'Bebas Neue',sans-serif;font-size:2rem;letter-spacing:0.08em;
+  color:var(--gold);text-shadow:0 0 30px rgba(240,192,64,0.4);}
+
+.loading-bar-bg{width:200px;height:3px;background:var(--b2);border-radius:2px;overflow:hidden;}
+.loading-bar-fill{height:100%;background:var(--gold);border-radius:2px;
+  animation:loadBar 1.5s ease infinite;}
+
+@keyframes loadBar{
+  0%{width:0%;margin-left:0%;}
+  50%{width:60%;margin-left:20%;}
+  100%{width:0%;margin-left:100%;}
+}
+
+.loading-msg{font-family:'IBM Plex Mono',monospace;font-size:0.6rem;text-transform:uppercase;
+  letter-spacing:0.12em;color:var(--dim);}
+
+/* ─── HEADER ─── */
+.hdr{position:relative;z-index:1;padding:0.9rem 1.75rem;border-bottom:1px solid var(--b1);
+  display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:0.75rem;}
+
+.brand-name{font-family:'Bebas Neue',sans-serif;font-size:1.6rem;letter-spacing:0.06em;
+  color:var(--gold);text-shadow:0 0 25px rgba(240,192,64,0.35);line-height:1;}
+.brand-tag{font-family:'IBM Plex Mono',monospace;font-size:0.5rem;text-transform:uppercase;
+  letter-spacing:0.16em;color:var(--dim);}
+
+.hdr-right{display:flex;align-items:center;gap:0.6rem;flex-wrap:wrap;}
+
+.pill{font-family:'IBM Plex Mono',monospace;font-size:0.52rem;text-transform:uppercase;
+  letter-spacing:0.08em;padding:0.25rem 0.6rem;border-radius:3px;border:1px solid var(--b2);color:var(--dim);}
+.pill.g{border-color:var(--green);color:var(--green);background:var(--green-d);}
+.pill.o{border-color:var(--orange);color:var(--orange);background:var(--orange-d);}
+.pill.r{border-color:var(--red);color:var(--red);background:var(--red-d);}
+
+.btn{font-family:'IBM Plex Mono',monospace;font-size:0.58rem;font-weight:600;text-transform:uppercase;
+  letter-spacing:0.1em;padding:0.38rem 0.8rem;border-radius:4px;cursor:pointer;transition:all 0.2s;border:1px solid;}
+.btn-gold{color:var(--gold);border-color:var(--gold);background:transparent;}
+.btn-gold:hover{background:var(--gold);color:#000;}
+.btn-dim{color:var(--mid);border-color:var(--b2);background:transparent;}
+.btn-dim:hover{color:var(--text);border-color:var(--mid);}
+
+/* ─── DOCTRINE ─── */
+.doctrine{position:relative;z-index:1;padding:0.5rem 1.75rem;border-bottom:1px solid var(--b1);
+  display:flex;align-items:center;gap:1.25rem;flex-wrap:wrap;}
+.doc-item{display:flex;align-items:center;gap:0.4rem;}
+.doc-phase{font-family:'Bebas Neue',sans-serif;font-size:0.85rem;letter-spacing:0.1em;}
+.doc-arrow{color:var(--dimmer);}
+.doc-desc{font-family:'IBM Plex Mono',monospace;font-size:0.52rem;text-transform:uppercase;letter-spacing:0.07em;color:var(--dim);}
+.doc-tag{font-family:'IBM Plex Mono',monospace;font-size:0.5rem;font-weight:600;
+  padding:0.1rem 0.35rem;border-radius:3px;text-transform:uppercase;letter-spacing:0.07em;}
+.sep{color:var(--dimmer);font-size:1rem;}
+
+/* ─── TABS ─── */
+.tabs{position:relative;z-index:1;display:flex;border-bottom:1px solid var(--b1);}
+.tab{font-family:'IBM Plex Mono',monospace;font-size:0.58rem;text-transform:uppercase;letter-spacing:0.11em;
+  padding:0.6rem 1.2rem;cursor:pointer;color:var(--dim);border-bottom:2px solid transparent;transition:all 0.2s;}
+.tab:hover{color:var(--mid);}
+.tab.on{color:var(--gold);border-bottom-color:var(--gold);}
+
+.view{display:none;position:relative;z-index:1;}
+.view.on{display:block;}
+
+/* ─── STATS ─── */
+.stats{display:flex;border-bottom:1px solid var(--b1);overflow-x:auto;}
+.stat{flex:1;min-width:95px;padding:0.7rem 1rem;border-right:1px solid var(--b1);}
+.stat:last-child{border-right:none;}
+.sl{font-family:'IBM Plex Mono',monospace;font-size:0.46rem;text-transform:uppercase;letter-spacing:0.12em;color:var(--dim);margin-bottom:0.15rem;}
+.sv{font-family:'Bebas Neue',sans-serif;font-size:1.35rem;letter-spacing:0.04em;line-height:1;}
+
+/* ─── LAYOUT ─── */
+.layout{display:grid;grid-template-columns:1fr 300px;min-height:calc(100vh - 170px);}
+.main{border-right:1px solid var(--b1);overflow:auto;}
+
+.panel-hdr{padding:0.65rem 1.1rem;border-bottom:1px solid var(--b1);
+  display:flex;align-items:center;justify-content:space-between;gap:0.5rem;flex-wrap:wrap;}
+.ph-title{font-family:'IBM Plex Mono',monospace;font-size:0.54rem;text-transform:uppercase;letter-spacing:0.12em;color:var(--dim);}
+
+.fils{display:flex;gap:0.28rem;flex-wrap:wrap;}
+.fil{font-family:'IBM Plex Mono',monospace;font-size:0.48rem;text-transform:uppercase;letter-spacing:0.07em;
+  padding:0.13rem 0.44rem;border-radius:3px;border:1px solid var(--b2);color:var(--dim);cursor:pointer;transition:all 0.15s;}
+.fil:hover,.fil.on{border-color:var(--gold);color:var(--gold);background:var(--gold-d);}
+
+/* ─── TABLE ─── */
+table{width:100%;border-collapse:collapse;}
+thead th{font-family:'IBM Plex Mono',monospace;font-size:0.48rem;text-transform:uppercase;letter-spacing:0.08em;
+  color:var(--dim);padding:0.48rem 0.8rem;text-align:left;border-bottom:1px solid var(--b2);font-weight:500;white-space:nowrap;}
+tbody tr{border-bottom:1px solid var(--b1);cursor:pointer;transition:background 0.1s;}
+tbody tr:hover{background:var(--s1);}
+tbody tr.sel{background:rgba(240,192,64,0.04);}
+tbody tr.tl{opacity:0.35;cursor:default;}
+tbody tr.tl:hover{background:transparent;}
+tbody td{padding:0.72rem 0.8rem;vertical-align:middle;}
+
+.td-rank{font-family:'Bebas Neue',sans-serif;font-size:1rem;color:var(--dim);width:24px;}
+.td-rank.hot{color:var(--gold);}
+.td-tick{font-family:'IBM Plex Mono',monospace;font-weight:600;font-size:0.82rem;letter-spacing:0.04em;}
+.td-co{font-size:0.64rem;color:var(--dim);max-width:110px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.td-mono{font-family:'IBM Plex Mono',monospace;font-size:0.68rem;color:var(--mid);}
+
+.sdots{display:flex;gap:0.24rem;}
+.sd{width:5px;height:5px;border-radius:50%;opacity:0.15;}
+.sd.on{opacity:1;}
+
+.dual{display:flex;flex-direction:column;gap:0.2rem;min-width:95px;}
+.dr{display:flex;align-items:center;gap:0.3rem;}
+.dl{font-family:'IBM Plex Mono',monospace;font-size:0.42rem;text-transform:uppercase;letter-spacing:0.06em;color:var(--dim);width:34px;flex-shrink:0;}
+.db{flex:1;height:2px;background:var(--b2);border-radius:1px;overflow:hidden;}
+.df{height:100%;border-radius:1px;}
+.dn{font-family:'IBM Plex Mono',monospace;font-size:0.58rem;font-weight:600;min-width:20px;text-align:right;}
+
+.combo{display:flex;align-items:center;justify-content:center;
+  width:36px;height:36px;border-radius:50%;border:2px solid;
+  font-family:'Bebas Neue',sans-serif;font-size:0.9rem;line-height:1;letter-spacing:0.03em;}
+
+.alrt{font-family:'IBM Plex Mono',monospace;font-size:0.46rem;text-transform:uppercase;
+  letter-spacing:0.06em;padding:0.1rem 0.35rem;border-radius:3px;border:1px solid;white-space:nowrap;}
+
+/* ─── SIDE ─── */
+.side{padding:1rem;overflow-y:auto;display:flex;flex-direction:column;gap:1.1rem;}
+.side-title{font-family:'IBM Plex Mono',monospace;font-size:0.5rem;text-transform:uppercase;
+  letter-spacing:0.14em;color:var(--dim);padding-bottom:0.4rem;border-bottom:1px solid var(--b1);margin-bottom:0.55rem;}
+
+.detail{background:var(--s1);border:1px solid var(--b2);border-radius:7px;padding:0.9rem;animation:up 0.2s ease;}
+@keyframes up{from{opacity:0;transform:translateY(4px);}to{opacity:1;transform:translateY(0);}}
+
+.d-tick{font-family:'Bebas Neue',sans-serif;font-size:2rem;letter-spacing:0.05em;
+  color:var(--gold);text-shadow:0 0 20px rgba(240,192,64,0.3);line-height:1;}
+.d-sub{font-size:0.62rem;color:var(--dim);margin-bottom:0.15rem;}
+.d-timing{font-family:'IBM Plex Mono',monospace;font-size:0.58rem;margin-bottom:0.7rem;}
+
+.score-pair{display:grid;grid-template-columns:1fr 1fr;gap:0.4rem;margin-bottom:0.75rem;}
+.sb{border-radius:5px;padding:0.6rem;text-align:center;border:1px solid;}
+.sb-l{font-family:'IBM Plex Mono',monospace;font-size:0.44rem;text-transform:uppercase;letter-spacing:0.1em;color:var(--dim);margin-bottom:0.22rem;}
+.sb-n{font-family:'Bebas Neue',sans-serif;font-size:1.75rem;line-height:1;letter-spacing:0.03em;}
+.sb-s{font-family:'IBM Plex Mono',monospace;font-size:0.4rem;color:var(--dim);margin-top:0.15rem;}
+
+.sbar-row{display:flex;align-items:center;gap:0.35rem;margin-bottom:0.35rem;}
+.sbar-l{font-family:'IBM Plex Mono',monospace;font-size:0.48rem;text-transform:uppercase;letter-spacing:0.05em;color:var(--dim);width:64px;flex-shrink:0;}
+.sbar-bg{flex:1;height:3px;background:var(--b2);border-radius:1px;overflow:hidden;}
+.sbar-f{height:100%;border-radius:1px;transition:width 0.5s cubic-bezier(0.16,1,0.3,1);}
+.sbar-v{font-family:'IBM Plex Mono',monospace;font-size:0.48rem;color:var(--dim);width:18px;text-align:right;}
+
+.cat-box{background:rgba(96,165,250,0.05);border:1px solid rgba(96,165,250,0.13);border-radius:5px;padding:0.58rem 0.65rem;margin-bottom:0.6rem;}
+.cat-t{font-family:'IBM Plex Mono',monospace;font-size:0.46rem;text-transform:uppercase;letter-spacing:0.09em;color:var(--blue);margin-bottom:0.2rem;}
+.cat-d{font-size:0.64rem;color:var(--mid);line-height:1.5;}
+
+.plan-box{background:var(--gold-d);border:1px solid rgba(240,192,64,0.14);border-radius:5px;padding:0.65rem 0.75rem;}
+.plan-hd{font-family:'IBM Plex Mono',monospace;font-size:0.46rem;text-transform:uppercase;letter-spacing:0.11em;color:var(--gold);opacity:0.7;margin-bottom:0.38rem;}
+.plan-r{font-size:0.65rem;color:var(--mid);line-height:1.6;margin-bottom:0.14rem;}
+.plan-r strong{color:var(--text);font-weight:500;}
+.plan-w{margin-top:0.38rem;font-family:'IBM Plex Mono',monospace;font-size:0.5rem;color:var(--red);opacity:0.75;}
+
+.exit-note{margin-top:0.4rem;background:rgba(61,255,160,0.04);border:1px solid rgba(61,255,160,0.1);border-radius:4px;padding:0.4rem 0.5rem;}
+.en-l{font-family:'IBM Plex Mono',monospace;font-size:0.42rem;text-transform:uppercase;letter-spacing:0.09em;color:var(--green);margin-bottom:0.12rem;}
+.en-t{font-size:0.63rem;color:var(--mid);line-height:1.4;}
+
+.empty{padding:1.5rem 0.5rem;text-align:center;}
+.empty p{font-family:'IBM Plex Mono',monospace;font-size:0.54rem;text-transform:uppercase;letter-spacing:0.1em;color:var(--dim);line-height:2.2;}
+
+/* ─── HISTORY VIEW ─── */
+.hist-view{padding:1.25rem 1.75rem;}
+.hv-title{font-family:'Bebas Neue',sans-serif;font-size:1.4rem;letter-spacing:0.05em;color:var(--gold);margin-bottom:0.2rem;}
+.hv-sub{font-family:'IBM Plex Mono',monospace;font-size:0.54rem;text-transform:uppercase;letter-spacing:0.1em;color:var(--dim);margin-bottom:1.1rem;}
+
+.hist-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:0.75rem;margin-bottom:1.25rem;}
+
+.hcard{background:var(--s1);border:1px solid var(--b2);border-radius:7px;padding:0.9rem;}
+.hcard-title{font-family:'IBM Plex Mono',monospace;font-size:0.52rem;text-transform:uppercase;letter-spacing:0.12em;color:var(--dim);margin-bottom:0.7rem;}
+
+.acc-num{font-family:'Bebas Neue',sans-serif;font-size:3.2rem;line-height:1;letter-spacing:0.03em;color:var(--green);}
+.acc-sub{font-family:'IBM Plex Mono',monospace;font-size:0.5rem;color:var(--dim);}
+
+.mini-grid{display:grid;grid-template-columns:1fr 1fr;gap:0.35rem;margin-top:0.7rem;}
+.mg{background:var(--s2);border-radius:4px;padding:0.4rem 0.5rem;}
+.mg-l{font-family:'IBM Plex Mono',monospace;font-size:0.44rem;text-transform:uppercase;letter-spacing:0.08em;color:var(--dim);margin-bottom:0.12rem;}
+.mg-v{font-family:'IBM Plex Mono',monospace;font-size:0.75rem;font-weight:600;}
+
+.sig-bar-row{display:flex;align-items:center;gap:0.4rem;margin-bottom:0.4rem;}
+.sig-name{font-family:'IBM Plex Mono',monospace;font-size:0.5rem;text-transform:uppercase;letter-spacing:0.06em;color:var(--dim);width:76px;flex-shrink:0;}
+.sig-bg{flex:1;height:4px;background:var(--b2);border-radius:2px;overflow:hidden;}
+.sig-fill{height:100%;border-radius:2px;}
+.sig-pct{font-family:'IBM Plex Mono',monospace;font-size:0.5rem;color:var(--dim);width:32px;text-align:right;}
+
+.hist-table-wrap{background:var(--s1);border:1px solid var(--b2);border-radius:7px;overflow:hidden;}
+.ht-title{font-family:'IBM Plex Mono',monospace;font-size:0.52rem;text-transform:uppercase;letter-spacing:0.12em;color:var(--dim);padding:0.75rem 1rem;border-bottom:1px solid var(--b2);}
+.ht{width:100%;border-collapse:collapse;}
+.ht thead th{font-family:'IBM Plex Mono',monospace;font-size:0.46rem;text-transform:uppercase;letter-spacing:0.09em;color:var(--dim);padding:0.45rem 0.8rem;text-align:left;border-bottom:1px solid var(--b2);font-weight:500;}
+.ht tbody tr{border-bottom:1px solid var(--b1);}
+.ht tbody td{padding:0.6rem 0.8rem;font-family:'IBM Plex Mono',monospace;font-size:0.64rem;vertical-align:middle;}
+
+.hit{color:var(--green);}
+.miss{color:var(--red);}
+.pending{color:var(--gold);}
+
+/* ─── ERROR ─── */
+.error-box{margin:2rem 1.75rem;background:var(--red-d);border:1px solid rgba(255,77,106,0.2);
+  border-radius:8px;padding:1.25rem;}
+.eb-title{font-family:'IBM Plex Mono',monospace;font-size:0.6rem;text-transform:uppercase;letter-spacing:0.12em;color:var(--red);margin-bottom:0.5rem;}
+.eb-msg{font-size:0.75rem;color:var(--mid);line-height:1.6;}
+.eb-code{font-family:'IBM Plex Mono',monospace;background:var(--s2);border-radius:4px;padding:0.6rem 0.75rem;font-size:0.65rem;color:var(--text);margin-top:0.75rem;overflow-x:auto;}
+
+@media(max-width:860px){
+  .layout{grid-template-columns:1fr;}
+  .side{border-top:1px solid var(--b1);}
+  .hist-grid{grid-template-columns:1fr;}
+}
+</style>
+</head>
+<body>
+
+<!-- SETUP OVERLAY -->
+<div class="setup-overlay" id="setupOverlay">
+  <div class="setup-card">
+    <div class="sc-title">Connect Your Scanner</div>
+    <div class="sc-sub">Enter your GitHub details to load live results</div>
+
+    <div class="sc-label">GitHub Username</div>
+    <input class="sc-input" id="ghUser" placeholder="e.g.  johndoe" autocomplete="off">
+
+    <div class="sc-label">Repository Name</div>
+    <input class="sc-input" id="ghRepo" placeholder="e.g.  sleeper-scanner" autocomplete="off">
+
+    <div class="sc-hint">
+      These are from your GitHub repository URL:<br>
+      <code style="color:var(--gold)">github.com/<strong>username</strong>/<strong>repo-name</strong></code><br><br>
+      The dashboard fetches <code>results.json</code> from your repo automatically. Make sure your repository is set to <strong>Public</strong>, or see the README for private repo setup.
+    </div>
+
+    <button class="sc-btn" onclick="connectGitHub()">Load My Results →</button>
+    <div class="sc-divider">or</div>
+    <button class="sc-demo" onclick="loadDemo()">Preview with demo data</button>
+  </div>
+</div>
+
+<!-- LOADING -->
+<div class="loading" id="loadingScreen" style="display:none">
+  <div class="loading-logo">Sleeper Scanner</div>
+  <div class="loading-bar-bg"><div class="loading-bar-fill"></div></div>
+  <div class="loading-msg" id="loadingMsg">Fetching latest scan...</div>
+</div>
+
+<!-- MAIN APP (hidden until loaded) -->
+<div id="app" style="display:none">
+
+  <!-- HEADER -->
+  <div class="hdr">
+    <div>
+      <div class="brand-name">Sleeper Scanner</div>
+      <div class="brand-tag">POP Method · Buy the Rumor, Sell the News · <span id="hdrSource" style="color:var(--gold)"></span></div>
+    </div>
+    <div class="hdr-right">
+      <span class="pill g" id="hdrWinRate">Win Rate: —</span>
+      <span class="pill o" id="hdrCandidates">— candidates</span>
+      <span class="pill r" id="hdrTooLate">— too late</span>
+      <button class="btn btn-dim" onclick="showSetup()">⚙ Settings</button>
+      <button class="btn btn-gold" onclick="refresh()">↺ Refresh</button>
+    </div>
+  </div>
+
+  <!-- DOCTRINE -->
+  <div class="doctrine">
+    <div class="doc-item">
+      <span class="doc-phase" style="color:var(--orange)">① RUMOR</span>
+      <span class="doc-arrow">→</span>
+      <span class="doc-desc">Catalyst building · Price quiet</span>
+      <span class="doc-tag" style="color:var(--gold);background:var(--gold-d);border:1px solid rgba(240,192,64,0.2)">← ENTER</span>
+    </div>
+    <span class="sep">|</span>
+    <div class="doc-item">
+      <span class="doc-phase" style="color:var(--red)">② NEWS</span>
+      <span class="doc-arrow">→</span>
+      <span class="doc-desc">Catalyst confirmed · Retail piles in</span>
+      <span class="doc-tag" style="color:var(--green);background:var(--green-d);border:1px solid rgba(61,255,160,0.2)">← EXIT</span>
+    </div>
+    <span class="sep">|</span>
+    <div class="doc-item">
+      <span class="doc-phase" style="color:var(--dim)">③ FADE</span>
+      <span class="doc-arrow">→</span>
+      <span class="doc-desc">Late buyers trapped</span>
+      <span class="doc-tag" style="color:var(--red);background:var(--red-d);border:1px solid rgba(255,77,106,0.2)">Never be here</span>
+    </div>
+  </div>
+
+  <!-- TABS -->
+  <div class="tabs">
+    <div class="tab on" id="tab-scanner" onclick="showTab('scanner')">Tonight's Scanner</div>
+    <div class="tab" id="tab-history" onclick="showTab('history')">Learning Engine</div>
+  </div>
+
+  <!-- SCANNER VIEW -->
+  <div class="view on" id="view-scanner">
+    <div class="stats" id="statsBar"></div>
+    <div class="layout">
+      <div class="main">
+        <div class="panel-hdr">
+          <div class="ph-title" id="panelDate">Loading...</div>
+          <div class="fils">
+            <div class="fil on" onclick="setFil('all',this)">All</div>
+            <div class="fil" onclick="setFil('alert',this)">🔴 Alert</div>
+            <div class="fil" onclick="setFil('watch',this)">🟡 Watch</div>
+            <div class="fil" onclick="setFil('toolate',this)">Too Late</div>
+          </div>
+        </div>
+        <table>
+          <thead>
+            <tr>
+              <th>#</th><th>Ticker</th><th>Company</th><th>Price</th>
+              <th>Float</th><th>Short Int.</th><th>Signals</th>
+              <th>Pop / Rumor</th><th>Combined</th><th>Status</th>
+            </tr>
+          </thead>
+          <tbody id="tbody"></tbody>
+        </table>
+        <div id="errorBox"></div>
+      </div>
+
+      <div class="side">
+        <div>
+          <div class="side-title">Selected Candidate</div>
+          <div id="detail"><div class="empty"><p>← Select a ticker<br>to see the full<br>analysis + plan</p></div></div>
+        </div>
+        <div>
+          <div class="side-title">Current Signal Weights</div>
+          <div id="weightsDisplay"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- HISTORY VIEW -->
+  <div class="view" id="view-history">
+    <div class="hist-view">
+      <div class="hv-title">Learning Engine</div>
+      <div class="hv-sub" id="histSub">Success = stock spikes ≥25% within 2 trading days</div>
+      <div class="hist-grid" id="histGrid"></div>
+      <div class="hist-table-wrap">
+        <div class="ht-title">Recent Prediction History</div>
+        <table class="ht">
+          <thead><tr><th>Date</th><th>Ticker</th><th>Score</th><th>Catalyst</th><th>Spike</th><th>Result</th></tr></thead>
+          <tbody id="histBody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+// ── STATE ──
+let DATA = null;
+let SEL  = null;
+let FILTER = 'all';
+let GH_USER = '';
+let GH_REPO = '';
+
+const STORAGE_KEY = 'sleeper_github_config';
+
+// ── DEMO DATA ──
+const DEMO = {
+  scan_date: new Date().toISOString().split('T')[0],
+  generated_at: new Date().toISOString(),
+  stats: { total_candidates:4, too_late_count:1, high_conviction:1, win_rate:68, total_scans:47, avg_spike:38 },
+  weights: {
+    pop:   { catalyst:30, low_float:25, short_interest:20, unusual_vol:15, buzz:10 },
+    rumor: { upcoming_date:40, options_flow:35, si_rising:25 }
+  },
+  candidates: [
+    { rank:1, ticker:'DEMO1', company:'Demo Pharma Inc', price:3.44, float_m:4.2, short_int:38, rvol:12.4,
+      pop_score:84, rumor_score:100, combo_score:92, catalyst:true, low_float:true, si_high:true, unusual_vol:true, buzz:false,
+      upcoming_date:true, options_flow:true, si_rising:true,
+      catalyst_type:'FDA PDUFA Date Tomorrow', catalyst_desc:"PDUFA action date tomorrow. Market hasn't priced it in yet — AH volume still thin.",
+      entry_idea:'Buy AH tonight $3.34–3.54. Stop $2.92.', exit_idea:"Sell into open gap. Target $4.30–5.16. Sell the news — don't hold after catalyst confirms.", timing:'Tonight AH' },
+    { rank:2, ticker:'DEMO2', company:'Demo Biotech Corp', price:5.80, float_m:6.1, short_int:29, rvol:8.2,
+      pop_score:73, rumor_score:60, combo_score:65, catalyst:true, low_float:true, si_high:true, unusual_vol:true, buzz:false,
+      upcoming_date:false, options_flow:true, si_rising:true,
+      catalyst_type:'Earnings Beat — After-Close', catalyst_desc:"Beat EPS by 34%, raised guidance. AH barely moved. Nobody positioned yet.",
+      entry_idea:'Buy AH or early premarket $5.63–5.97. Stop $4.93.', exit_idea:'Sell at open into volume spike. Target $7.25.', timing:'Premarket AM' },
+    { rank:3, ticker:'DEMO3', company:'Demo Contract Co', price:1.88, float_m:7.2, short_int:22, rvol:5.1,
+      pop_score:71, rumor_score:60, combo_score:64, catalyst:true, low_float:true, si_high:false, unusual_vol:true, buzz:true,
+      upcoming_date:false, options_flow:true, si_rising:true,
+      catalyst_type:'DoD Contract Announced', catalyst_desc:'Contract just dropped 4:48PM. Retail hasn\'t seen it yet.',
+      entry_idea:'Wait for premarket confirmation $1.82–1.94. Stop $1.60.', exit_idea:'Target $2.35 at open.', timing:'Premarket AM' },
+    { rank:4, ticker:'SPEC1', company:'Speculative Play Ltd', price:0.92, float_m:9.6, short_int:18, rvol:4.1,
+      pop_score:30, rumor_score:0, combo_score:13, catalyst:false, low_float:true, si_high:false, unusual_vol:false, buzz:true,
+      upcoming_date:false, options_flow:false, si_rising:false,
+      catalyst_type:'Social Buzz Only', catalyst_desc:'No hard catalyst. Buzz up 6x on StockTwits.',
+      entry_idea:'Small position only $0.89–0.95. Stop $0.78.', exit_idea:'Quick flip target $1.15.', timing:'Watch Only' },
+  ],
+  too_late: [
+    { ticker:'LATE1', company:'Already Moved Inc', price:8.20, float_m:4.5, short_int:41, rvol:22.0,
+      pop_score:88, rumor_score:0, combo_score:0, catalyst:true, low_float:true, si_high:true, unusual_vol:true, buzz:true,
+      upcoming_date:false, options_flow:false, si_rising:false,
+      catalyst_type:'FDA Approval — CONFIRMED & WIDELY REPORTED', catalyst_desc:'On Yahoo Finance, CNBC, Reddit. Already up 40% AH.',
+      too_late:true, too_late_reason:'Reported by Yahoo Finance, CNBC, Benzinga, MarketWatch' }
+  ],
+  history: [
+    { ticker:'NVAX', date:'2026-02-16', combo_score:88, catalyst:'FDA Approval', spike_pct:147, hit:true },
+    { ticker:'MFIN', date:'2026-02-16', combo_score:74, catalyst:'Earnings Beat', spike_pct:62, hit:true },
+    { ticker:'BUZZ', date:'2026-02-16', combo_score:55, catalyst:'Social Buzz', spike_pct:8, hit:false },
+    { ticker:'APRE', date:'2026-02-15', combo_score:82, catalyst:'FDA Fast Track', spike_pct:91, hit:true },
+    { ticker:'SMFL', date:'2026-02-15', combo_score:70, catalyst:'Contract', spike_pct:34, hit:true },
+    { ticker:'RCAT', date:'2026-02-15', combo_score:48, catalyst:'Buzz+Vol', spike_pct:11, hit:false },
+    { ticker:'CRGO', date:'2026-02-14', combo_score:79, catalyst:'FDA PDUFA', spike_pct:55, hit:true },
+    { ticker:'AEYE', date:'2026-02-14', combo_score:63, catalyst:'Earnings', spike_pct:28, hit:true },
+    { ticker:'MAPS', date:'2026-02-14', combo_score:77, catalyst:'Earnings', spike_pct:18, hit:false },
+    { ticker:'DRUG', date:'2026-02-13', combo_score:91, catalyst:'FDA Approval', spike_pct:203, hit:true },
+  ],
+  signal_stats: {
+    catalyst:    { win_rate:79, sample:38, avg_spike:52 },
+    low_float:   { win_rate:74, sample:41, avg_spike:48 },
+    si_high:     { win_rate:71, sample:35, avg_spike:44 },
+    unusual_vol: { win_rate:65, sample:42, avg_spike:38 },
+    buzz:        { win_rate:41, sample:28, avg_spike:22 },
+    upcoming_date:{ win_rate:84, sample:18, avg_spike:67 },
+    options_flow: { win_rate:78, sample:24, avg_spike:58 },
+    si_rising:    { win_rate:72, sample:31, avg_spike:46 },
+  }
+};
+
+// ── INIT ──
+window.addEventListener('load', () => {
+  const saved = localStorage.getItem(STORAGE_KEY);
+  if (saved) {
+    try {
+      const cfg = JSON.parse(saved);
+      GH_USER = cfg.user || '';
+      GH_REPO = cfg.repo || '';
+      if (GH_USER && GH_REPO) {
+        document.getElementById('ghUser').value = GH_USER;
+        document.getElementById('ghRepo').value = GH_REPO;
+        loadFromGitHub();
+        return;
+      }
+    } catch(e) {}
+  }
+  // Show setup
+});
+
+// ── GITHUB CONNECT ──
+function connectGitHub() {
+  GH_USER = document.getElementById('ghUser').value.trim();
+  GH_REPO = document.getElementById('ghRepo').value.trim();
+  if (!GH_USER || !GH_REPO) {
+    alert('Please enter both your GitHub username and repository name.');
+    return;
+  }
+  localStorage.setItem(STORAGE_KEY, JSON.stringify({ user: GH_USER, repo: GH_REPO }));
+  loadFromGitHub();
+}
+
+async function loadFromGitHub() {
+  document.getElementById('setupOverlay').style.display = 'none';
+  document.getElementById('loadingScreen').style.display = 'flex';
+  document.getElementById('loadingMsg').textContent = `Fetching from github.com/${GH_USER}/${GH_REPO}...`;
+
+  // Use raw.githubusercontent.com to fetch the file directly
+  const url = `https://raw.githubusercontent.com/${GH_USER}/${GH_REPO}/main/results.json?t=${Date.now()}`;
+
+  try {
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(`HTTP ${res.status} — file not found`);
+    const json = await res.json();
+    DATA = json;
+    document.getElementById('hdrSource').textContent = `${GH_USER}/${GH_REPO}`;
+    renderAll();
+  } catch(e) {
+    document.getElementById('loadingScreen').style.display = 'none';
+    document.getElementById('app').style.display = 'block';
+    document.getElementById('errorBox').innerHTML = `
+      <div class="error-box">
+        <div class="eb-title">⚠ Could Not Load results.json</div>
+        <div class="eb-msg">
+          Error: <strong>${e.message}</strong><br><br>
+          This usually means one of:<br>
+          • The repository doesn't have a <code>results.json</code> file yet (scanner hasn't run)<br>
+          • The repository is Private — change it to Public in GitHub Settings, or run the scanner once first<br>
+          • The username or repo name is spelled wrong<br><br>
+          Check your settings below, or preview with demo data.
+        </div>
+        <div class="eb-code">Expected file at:<br>https://raw.githubusercontent.com/${GH_USER}/${GH_REPO}/main/results.json</div>
+        <div style="display:flex;gap:0.5rem;margin-top:0.75rem;flex-wrap:wrap;">
+          <button class="btn btn-dim" onclick="showSetup()" style="font-size:0.58rem">⚙ Fix Settings</button>
+          <button class="btn btn-gold" onclick="loadDemo()" style="font-size:0.58rem">Preview Demo Data</button>
+        </div>
+      </div>
+    `;
+  }
+}
+
+function loadDemo() {
+  document.getElementById('setupOverlay').style.display = 'none';
+  document.getElementById('loadingScreen').style.display = 'flex';
+  document.getElementById('loadingMsg').textContent = 'Loading demo data...';
+  DATA = DEMO;
+  document.getElementById('hdrSource').textContent = 'demo mode';
+  setTimeout(renderAll, 600);
+}
+
+function refresh() {
+  if (GH_USER && GH_REPO) {
+    loadFromGitHub();
+  } else {
+    loadDemo();
+  }
+}
+
+function showSetup() {
+  document.getElementById('setupOverlay').style.display = 'flex';
+}
+
+// ── RENDER ──
+function renderAll() {
+  document.getElementById('loadingScreen').style.display = 'none';
+  document.getElementById('app').style.display = 'block';
+
+  const d = DATA;
+  const s = d.stats;
+
+  // Header pills
+  document.getElementById('hdrWinRate').textContent = `Win Rate: ${s.win_rate}%`;
+  document.getElementById('hdrCandidates').textContent = `${s.total_candidates} candidates`;
+  document.getElementById('hdrTooLate').textContent = `${s.too_late_count} too late`;
+
+  // Stats bar
+  document.getElementById('statsBar').innerHTML = [
+    ['Candidates', s.total_candidates, 'var(--gold)'],
+    ['High Conviction', s.high_conviction, 'var(--green)'],
+    ['Too Late', s.too_late_count, 'var(--red)'],
+    ['Win Rate', s.win_rate+'%', 'var(--green)'],
+    ['Avg Spike', (s.avg_spike||0)+'%', 'var(--orange)'],
+    ['Total Scans', s.total_scans, 'var(--mid)'],
+  ].map(([l,v,c])=>`
+    <div class="stat">
+      <div class="sl">${l}</div>
+      <div class="sv" style="color:${c}">${v}</div>
+    </div>
+  `).join('');
+
+  // Panel date
+  const dt = new Date(d.scan_date + 'T12:00:00');
+  document.getElementById('panelDate').textContent =
+    `Scan: ${dt.toLocaleDateString([],{weekday:'short',month:'short',day:'numeric',year:'numeric'})}`;
+
+  renderTable(FILTER);
+  renderWeights();
+  renderHistory();
+}
+
+function popColor(p){ return p>=80?'var(--gold)':p>=60?'var(--green)':p>=45?'var(--violet)':'var(--dim)'; }
+function rumorColor(r){ return r>=70?'var(--orange)':r>=45?'var(--gold)':'var(--dim)'; }
+function comboColor(c){ if(c===0)return 'var(--red)'; if(c>=80)return 'var(--gold)'; if(c>=65)return 'var(--green)'; return 'var(--violet)'; }
+
+function getRows(filter) {
+  if (!DATA) return [];
+  const all = [...DATA.candidates, ...(filter==='toolate'?DATA.too_late:[])];
+  if (filter==='toolate') return DATA.too_late;
+  if (filter==='alert')   return DATA.candidates.filter(r=>r.combo_score>=80);
+  if (filter==='watch')   return DATA.candidates.filter(r=>r.combo_score>=65 && r.combo_score<80);
+  return DATA.candidates;
+}
+
+function renderTable(filter) {
+  FILTER = filter;
+  const rows = getRows(filter);
+  const tbody = document.getElementById('tbody');
+  tbody.innerHTML = '';
+
+  if (!rows.length) {
+    tbody.innerHTML = `<tr><td colspan="10" style="padding:2rem;text-align:center;font-family:'IBM Plex Mono',monospace;font-size:0.6rem;color:var(--dim);text-transform:uppercase;letter-spacing:0.1em">No candidates in this filter</td></tr>`;
+    return;
+  }
+
+  rows.forEach((r,i) => {
+    const tr = document.createElement('tr');
+    if (r.too_late) tr.classList.add('tl');
+    if (SEL && SEL.ticker===r.ticker) tr.classList.add('sel');
+
+    const sigs = [
+      {k:'catalyst',c:'#60a5fa'},{k:'low_float',c:'#f0c040'},{k:'si_high',c:'#ff4d6a'},
+      {k:'unusual_vol',c:'#3dffa0'},{k:'buzz',c:'#c084fc'}
+    ].map(x=>`<div class="sd ${r[x.k]?'on':''}" style="background:${x.c}"></div>`).join('');
+
+    const fc = r.float_m<5?'var(--gold)':r.float_m<10?'var(--mid)':'var(--dim)';
+    const sic = r.short_int>=30?'var(--red)':r.short_int>=18?'var(--violet)':'var(--dim)';
+
+    const rankCell = r.too_late
+      ? `<td class="td-rank"><span style="color:var(--red);font-size:0.52rem">✗</span></td>`
+      : `<td class="td-rank ${r.rank<=3?'hot':''}">${r.rank||'—'}</td>`;
+
+    const scoreCell = r.too_late
+      ? `<td><span style="font-family:'IBM Plex Mono',monospace;font-size:0.58rem;color:var(--red)">DISQUALIFIED</span></td><td></td>`
+      : `<td>
+          <div class="dual">
+            <div class="dr">
+              <span class="dl">Pop</span>
+              <div class="db"><div class="df" style="width:${r.pop_score}%;background:${popColor(r.pop_score)}"></div></div>
+              <span class="dn" style="color:${popColor(r.pop_score)}">${r.pop_score}</span>
+            </div>
+            <div class="dr">
+              <span class="dl" style="color:var(--orange)">Rumor</span>
+              <div class="db"><div class="df" style="width:${r.rumor_score}%;background:${rumorColor(r.rumor_score)}"></div></div>
+              <span class="dn" style="color:${rumorColor(r.rumor_score)}">${r.rumor_score}</span>
+            </div>
+          </div>
+        </td>
+        <td>
+          <div class="combo" style="color:${comboColor(r.combo_score)};border-color:${comboColor(r.combo_score)};background:${comboColor(r.combo_score)}12">
+            ${r.combo_score}
+          </div>
+        </td>`;
+
+    const alertLabel = r.too_late ? 'TOO LATE' : r.combo_score>=80 ? 'ALERT' : r.combo_score>=65 ? 'WATCH' : 'SPEC';
+    const alertColor = r.too_late ? 'var(--red)' : r.combo_score>=80 ? 'var(--gold)' : r.combo_score>=65 ? 'var(--green)' : 'var(--violet)';
+
+    tr.innerHTML = `
+      ${rankCell}
+      <td class="td-tick">${r.ticker}</td>
+      <td class="td-co">${r.company||''}</td>
+      <td class="td-mono">$${(r.price||0).toFixed(2)}</td>
+      <td class="td-mono" style="color:${fc}">${r.float_m}M</td>
+      <td class="td-mono" style="color:${sic}">${r.short_int}%</td>
+      <td><div class="sdots">${sigs}</div></td>
+      ${scoreCell}
+      <td><span class="alrt" style="color:${alertColor};border-color:${alertColor};background:${alertColor}12">${alertLabel}</span></td>
+    `;
+
+    if (!r.too_late) tr.onclick = () => selectRow(r, tr);
+    tbody.appendChild(tr);
+  });
+}
+
+function selectRow(r, tr) {
+  SEL = r;
+  document.querySelectorAll('tbody tr').forEach(t=>t.classList.remove('sel'));
+  tr.classList.add('sel');
+
+  const tc = r.timing==='Tonight AH'?'var(--gold)':r.timing==='Premarket AM'?'var(--green)':'var(--dim)';
+
+  const rumorChecks = [
+    [r.upcoming_date, '#fb923c', 'Upcoming Date'],
+    [r.options_flow,  '#c084fc', 'Options Flow'],
+    [r.si_rising,     '#ff4d6a', 'SI Rising'],
+  ].map(([lit,color,label])=>`
+    <div class="sbar-row">
+      <span class="sbar-l">${label}</span>
+      <div class="sbar-bg"><div class="sbar-f" style="width:${lit?100:0}%;background:${color}"></div></div>
+      <span class="sbar-v">${lit?'✅':'○'}</span>
+    </div>
+  `).join('');
+
+  document.getElementById('detail').innerHTML = `
+    <div class="detail">
+      <div class="d-tick">${r.ticker}</div>
+      <div class="d-sub">${r.company}</div>
+      <div class="d-timing" style="color:${tc}">⏱ ${r.timing}</div>
+
+      <div class="score-pair">
+        <div class="sb" style="border-color:${popColor(r.pop_score)}20;background:${popColor(r.pop_score)}08">
+          <div class="sb-l">Pop Score</div>
+          <div class="sb-n" style="color:${popColor(r.pop_score)}">${r.pop_score}</div>
+          <div class="sb-s">Setup quality</div>
+        </div>
+        <div class="sb" style="border-color:${rumorColor(r.rumor_score)}20;background:${rumorColor(r.rumor_score)}08">
+          <div class="sb-l" style="color:var(--orange)">Rumor Score</div>
+          <div class="sb-n" style="color:${rumorColor(r.rumor_score)}">${r.rumor_score}</div>
+          <div class="sb-s">How early you are</div>
+        </div>
+      </div>
+
+      <div style="margin-bottom:0.75rem;">
+        <div style="font-family:'IBM Plex Mono',monospace;font-size:0.46rem;text-transform:uppercase;letter-spacing:0.1em;color:var(--dim);margin-bottom:0.25rem;">Rumor Signals</div>
+        ${rumorChecks}
+      </div>
+
+      <div class="cat-box">
+        <div class="cat-t">${r.catalyst_type||'No catalyst'}</div>
+        <div class="cat-d">${r.catalyst_desc||''}</div>
+      </div>
+
+      <div class="plan-box">
+        <div class="plan-hd">⚡ Pre-Gap Plan</div>
+        <div class="plan-r"><strong>Entry:</strong> ${r.entry_idea}</div>
+        <div class="exit-note">
+          <div class="en-l">Exit Trigger (Sell the News)</div>
+          <div class="en-t">${r.exit_idea}</div>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function renderWeights() {
+  if (!DATA || !DATA.weights) return;
+  const w = DATA.weights;
+  const all = [
+    ...Object.entries(w.pop).map(([k,v])=>({ key:k, val:v, max:50, color:'#f0c040', family:'pop' })),
+    ...Object.entries(w.rumor).map(([k,v])=>({ key:k, val:v, max:60, color:'#fb923c', family:'rumor' })),
+  ];
+
+  const popRows = all.filter(x=>x.family==='pop');
+  const rumorRows = all.filter(x=>x.family==='rumor');
+
+  const makeRows = (rows) => rows.map(x=>`
+    <div class="sbar-row">
+      <span class="sbar-l">${x.key.replace('_',' ')}</span>
+      <div class="sbar-bg"><div class="sbar-f" style="width:${(x.val/x.max)*100}%;background:${x.color}"></div></div>
+      <span class="sbar-v" style="color:${x.color}">${x.val}%</span>
+    </div>
+  `).join('');
+
+  document.getElementById('weightsDisplay').innerHTML = `
+    <div style="font-family:'IBM Plex Mono',monospace;font-size:0.46rem;text-transform:uppercase;letter-spacing:0.08em;color:var(--orange);margin-bottom:0.4rem;">Pop Score</div>
+    ${makeRows(popRows)}
+    <div style="font-family:'IBM Plex Mono',monospace;font-size:0.46rem;text-transform:uppercase;letter-spacing:0.08em;color:var(--orange);margin-top:0.7rem;margin-bottom:0.4rem;">Rumor Score</div>
+    ${makeRows(rumorRows)}
+    <div style="font-family:'IBM Plex Mono',monospace;font-size:0.46rem;color:var(--dim);margin-top:0.5rem;">Auto-updated by learning engine nightly</div>
+  `;
+}
+
+function renderHistory() {
+  if (!DATA) return;
+  const s = DATA.stats;
+  const sig = DATA.signal_stats || {};
+
+  // Stats cards
+  const sigEntries = Object.entries(sig).sort((a,b)=>b[1].win_rate-a[1].win_rate);
+  const sigBars = sigEntries.slice(0,6).map(([name,st])=>`
+    <div class="sig-bar-row">
+      <span class="sig-name">${name.replace('_',' ')}</span>
+      <div class="sig-bg"><div class="sig-fill" style="width:${st.win_rate}%;background:${st.win_rate>=75?'var(--green)':st.win_rate>=60?'var(--gold)':'var(--red)'}"></div></div>
+      <span class="sig-pct" style="color:${st.win_rate>=75?'var(--green)':st.win_rate>=60?'var(--gold)':'var(--red)'}">${st.win_rate}%</span>
+    </div>
+  `).join('');
+
+  document.getElementById('histSub').textContent =
+    `Success = stock spikes ≥25% within 2 trading days · ${s.total_scans} scans · ${DATA.history?.length||0} tracked predictions`;
+
+  document.getElementById('histGrid').innerHTML = `
+    <div class="hcard">
+      <div class="hcard-title">Overall Accuracy</div>
+      <div class="acc-num">${s.win_rate}%</div>
+      <div class="acc-sub">Win rate · ${s.total_scans} scans</div>
+      <div class="mini-grid">
+        <div class="mg"><div class="mg-l">Avg Spike</div><div class="mg-v" style="color:var(--gold)">+${s.avg_spike}%</div></div>
+        <div class="mg"><div class="mg-l">Total Scans</div><div class="mg-v" style="color:var(--mid)">${s.total_scans}</div></div>
+        <div class="mg"><div class="mg-l">High Conv.</div><div class="mg-v" style="color:var(--green)">${s.high_conviction}</div></div>
+        <div class="mg"><div class="mg-l">Too Late Filtered</div><div class="mg-v" style="color:var(--red)">${s.too_late_count}</div></div>
+      </div>
+    </div>
+    <div class="hcard">
+      <div class="hcard-title">Signal Performance</div>
+      ${sigBars || '<div style="font-size:0.68rem;color:var(--dim)">No signal data yet — run more scans to build up history.</div>'}
+    </div>
+  `;
+
+  // History table
+  const history = DATA.history || [];
+  document.getElementById('histBody').innerHTML = history.map(h => {
+    const rc = h.hit===true ? 'hit' : h.hit===false ? 'miss' : 'pending';
+    const rl = h.hit===true ? '✅ HIT' : h.hit===false ? '✗ MISS' : '⏳ PENDING';
+    const spike = h.spike_pct != null ? `${h.spike_pct>0?'+':''}${h.spike_pct}%` : '—';
+    return `
+      <tr>
+        <td style="color:var(--dim)">${h.date}</td>
+        <td style="font-weight:600;letter-spacing:0.04em">${h.ticker}</td>
+        <td style="color:${h.combo_score>=80?'var(--gold)':h.combo_score>=65?'var(--green)':'var(--violet)'}">${h.combo_score}</td>
+        <td style="color:var(--mid);font-size:0.6rem">${h.catalyst||'—'}</td>
+        <td style="color:${h.hit?'var(--green)':'var(--red)'}">${spike}</td>
+        <td class="${rc}">${rl}</td>
+      </tr>
+    `;
+  }).join('') || `<tr><td colspan="6" style="padding:1.5rem;text-align:center;font-family:'IBM Plex Mono',monospace;font-size:0.6rem;color:var(--dim);text-transform:uppercase">No history yet — keep scanning nightly</td></tr>`;
+}
+
+function setFil(type, el) {
+  document.querySelectorAll('.fil').forEach(f=>f.classList.remove('on'));
+  el.classList.add('on');
+  renderTable(type);
+}
+
+function showTab(name) {
+  document.querySelectorAll('.view').forEach(v=>v.classList.remove('on'));
+  document.querySelectorAll('.tab').forEach(t=>t.classList.remove('on'));
+  document.getElementById('view-'+name).classList.add('on');
+  document.getElementById('tab-'+name).classList.add('on');
+}
+</script>
+</body>
+</html>
