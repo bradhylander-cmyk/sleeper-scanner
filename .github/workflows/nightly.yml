@@ -1,0 +1,54 @@
+name: Sleeper Scanner — Nightly Run
+
+on:
+  schedule:
+    # Runs at 11:00 PM UTC = 6:00 PM ET (EST, Nov–Mar)
+    # Change to 22:00 for 6PM ET during summer (EDT, Mar–Nov)
+    - cron: '0 23 * * 1-5'   # Mon–Fri only (market days)
+
+  # Also lets you run it manually from GitHub any time
+  workflow_dispatch:
+
+jobs:
+  run-scanner:
+    runs-on: ubuntu-latest
+
+    steps:
+      # Step 1: Check out your code from the repository
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # Step 2: Set up Python
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      # Step 3: Install dependencies
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      # Step 4: Restore the database from previous runs
+      # (This is how your scan history and learned weights persist night to night)
+      - name: Restore database
+        uses: actions/cache@v4
+        with:
+          path: |
+            sleeper.db
+            weights.json
+          key: sleeper-data-${{ runner.os }}
+          restore-keys: sleeper-data-
+
+      # Step 5: Run the scanner
+      - name: Run nightly scan
+        run: python scanner.py --all
+
+      # Step 6: Save the updated database and weights back to cache
+      # This is how it "remembers" results between runs
+      - name: Save database
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            sleeper.db
+            weights.json
+          key: sleeper-data-${{ runner.os }}-${{ github.run_id }}
