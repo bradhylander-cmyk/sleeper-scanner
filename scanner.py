@@ -752,71 +752,210 @@ def print_report(conn):
     print("═"*60)
 
 
-# ─── DEMO MODE ───────────────────────────────────────────────────────────────
+# ─── REAL DATA — FINVIZ SCREENER ─────────────────────────────────────────────
 
-def run_demo_scan(conn, weights: dict):
+def fetch_finviz_candidates() -> list:
     """
-    Run a demo scan with sample data (no API keys needed).
-    In production, replace this with your actual data fetching.
+    Pull real stock candidates from Finviz's free screener.
+    Filters for: low float, high relative volume, low price, after-hours action.
+    No API key needed — uses their public screener URL.
+    Returns list of raw candidate dicts ready for score_stock().
     """
-    print("\n  Running demo scan (sample data)...")
-    print("  In production, connect your data source in fetch_price_data()\n")
+    import urllib.request
+    import re
 
-    # Sample stocks — in production these come from your screener
-    sample_candidates = [
-        {
-            "ticker": "DEMO1", "company": "Demo Pharma Inc",
-            "price": 3.44, "float_m": 4.2, "short_int": 38,
-            "rvol": 12.4, "catalyst": True,
-            "catalyst_type": "FDA PDUFA Date in 2 Days",
-            "catalyst_desc": "PDUFA action date scheduled. Market hasn't priced in.",
-            "buzz_level": 3,
-            "upcoming_date": True, "options_flow": True, "si_rising": True,
-            "news_sources": [],  # Not yet widely reported
-        },
-        {
-            "ticker": "DEMO2", "company": "Demo Biotech Corp",
-            "price": 5.80, "float_m": 6.1, "short_int": 29,
-            "rvol": 8.2, "catalyst": True,
-            "catalyst_type": "Earnings Beat After-Close",
-            "catalyst_desc": "Beat EPS by 34%. AH volume thin — nobody positioned yet.",
-            "buzz_level": 4,
-            "upcoming_date": False, "options_flow": True, "si_rising": True,
-            "news_sources": [],
-        },
-        {
-            "ticker": "LATE1", "company": "Already Moved Inc",
-            "price": 8.20, "float_m": 4.5, "short_int": 41,
-            "rvol": 22.0, "catalyst": True,
-            "catalyst_type": "FDA Approval — CONFIRMED",
-            "catalyst_desc": "Approval confirmed. Now trending on Yahoo Finance and CNBC.",
-            "buzz_level": 10,
-            "upcoming_date": False, "options_flow": False, "si_rising": False,
-            "news_sources": ["yahoo finance", "cnbc", "benzinga", "marketwatch"],
-        },
-        {
-            "ticker": "DEMO3", "company": "Demo Contract Co",
-            "price": 1.88, "float_m": 7.2, "short_int": 22,
-            "rvol": 5.1, "catalyst": True,
-            "catalyst_type": "DoD Contract Announced",
-            "catalyst_desc": "Contract just dropped 4:48PM. Retail hasn't seen it yet.",
-            "buzz_level": 2,
-            "upcoming_date": False, "options_flow": True, "si_rising": True,
-            "news_sources": ["businesswire"],  # Only on wire — not yet picked up
-        },
-        {
-            "ticker": "SPEC1", "company": "Speculative Play Ltd",
-            "price": 0.92, "float_m": 9.6, "short_int": 18,
-            "rvol": 4.1, "catalyst": False,
-            "catalyst_type": "Social Buzz Only",
-            "catalyst_desc": "No catalyst. Buzz up 6x on StockTwits.",
-            "buzz_level": 8,
-            "upcoming_date": False, "options_flow": False, "si_rising": False,
-            "news_sources": [],
-        },
-    ]
+    print("\n  Fetching candidates from Finviz screener...")
 
-    return sample_candidates
+    # Finviz screener filters:
+    # sh_float_u5    = float under 5M
+    # sh_relvol_o2   = relative volume over 2x
+    # sh_price_u30   = price under $30
+    # sh_price_o0.5  = price over $0.50
+    # cap_smallover  = small cap and above (filters out shells)
+    # ta_change_u    = price changed today (active)
+    SCREENER_URL = (
+        "https://finviz.com/screener.ashx?v=111&f="
+        "sh_float_u10,sh_relvol_o2,sh_price_u30,sh_price_o0.5"
+        "&o=-relativevolume&r=1"
+    )
+
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+    }
+
+    try:
+        req = urllib.request.Request(SCREENER_URL, headers=headers)
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            html = resp.read().decode("utf-8", errors="ignore")
+    except Exception as e:
+        print(f"  ⚠ Finviz fetch failed: {e}")
+        print("  → Falling back to yfinance-only mode")
+        return []
+
+    # Parse ticker symbols from the screener table
+    # Finviz wraps tickers in a specific link pattern
+    tickers = re.findall(r'quote\.ashx\?t=([A-Z]{1,5})"', html)
+    tickers = list(dict.fromkeys(tickers))  # deduplicate, preserve order
+
+    if not tickers:
+        print("  ⚠ No tickers found in Finviz response (may be rate limited)")
+        return []
+
+    print(f"  ✓ Found {len(tickers)} candidates from Finviz: {', '.join(tickers[:10])}{'...' if len(tickers)>10 else ''}")
+
+    # Now enrich each ticker with yfinance data
+    candidates = []
+    for ticker in tickers[:25]:  # cap at 25 to avoid rate limits
+        stock = enrich_ticker(ticker)
+        if stock:
+            candidates.append(stock)
+
+    return candidates
+
+
+def enrich_ticker(ticker: str) -> dict:
+    """
+    Pull full stock data for one ticker using yfinance.
+    Returns a candidate dict ready for score_stock(), or None if data unavailable.
+    """
+    try:
+        import yfinance as yf
+        import time
+
+        time.sleep(0.5)  # be polite to Yahoo Finance
+
+        ystock = yf.Ticker(ticker)
+        info   = ystock.fast_info
+        hist   = ystock.history(period="10d")
+
+        if hist.empty or len(hist) < 2:
+            return None
+
+        # Price
+        price = round(float(hist["Close"].iloc[-1]), 2)
+        if price < THRESHOLDS["min_price"] or price > THRESHOLDS["max_price"]:
+            return None
+
+        # Relative volume
+        avg_vol = float(hist["Volume"].iloc[:-1].mean())
+        today_vol = float(hist["Volume"].iloc[-1])
+        rvol = round(today_vol / avg_vol, 1) if avg_vol > 0 else 0
+
+        # Float (yfinance provides this)
+        float_shares = getattr(info, "shares_outstanding", None)
+        float_m = round(float_shares / 1_000_000, 1) if float_shares else 15.0
+
+        # Short interest (yfinance has this sometimes)
+        try:
+            short_pct = ystock.info.get("shortPercentOfFloat", 0) or 0
+            short_int = round(float(short_pct) * 100, 1)
+        except:
+            short_int = 0
+
+        # News — check how widely reported the catalyst is
+        news = ystock.news or []
+        news_sources = [
+            (a.get("publisher") or "").lower()
+            for a in news[:10]
+        ]
+
+        # Catalyst detection from recent headlines
+        catalyst      = False
+        catalyst_type = "Unusual Volume"
+        catalyst_desc = f"No specific catalyst found. RVOL {rvol}x above average."
+        buzz_level    = 3
+        upcoming_date = False
+        options_flow  = False
+        si_rising     = short_int >= 25  # elevated SI = rising into something
+
+        headline_text = " ".join([
+            (a.get("title") or "") for a in news[:5]
+        ]).lower()
+
+        # Detect catalyst type from headlines
+        if any(w in headline_text for w in ["fda", "pdufa", "approval", "nda", "bla"]):
+            catalyst      = True
+            catalyst_type = "FDA / Regulatory Catalyst"
+            catalyst_desc = f"FDA-related headline detected. {news[0].get('title','')[:80] if news else ''}"
+            upcoming_date = True
+            buzz_level    = 5
+
+        elif any(w in headline_text for w in ["earnings", "eps", "revenue", "beat", "guidance"]):
+            catalyst      = True
+            catalyst_type = "Earnings Related"
+            catalyst_desc = f"{news[0].get('title','')[:80] if news else 'Earnings activity detected'}"
+            buzz_level    = 5
+
+        elif any(w in headline_text for w in ["contract", "award", "dod", "government", "deal"]):
+            catalyst      = True
+            catalyst_type = "Contract / Deal"
+            catalyst_desc = f"{news[0].get('title','')[:80] if news else 'Contract/deal activity'}"
+            buzz_level    = 4
+
+        elif any(w in headline_text for w in ["merger", "acquisition", "buyout", "takeover"]):
+            catalyst      = True
+            catalyst_type = "M&A Activity"
+            catalyst_desc = f"{news[0].get('title','')[:80] if news else 'M&A activity detected'}"
+            buzz_level    = 7
+
+        elif any(w in headline_text for w in ["clinical", "trial", "phase", "data", "study"]):
+            catalyst      = True
+            catalyst_type = "Clinical / Study Data"
+            catalyst_desc = f"{news[0].get('title','')[:80] if news else 'Clinical data activity'}"
+            upcoming_date = True
+            buzz_level    = 5
+
+        elif news:
+            catalyst      = True
+            catalyst_type = "Recent News"
+            catalyst_desc = f"{news[0].get('title','')[:80]}"
+            buzz_level    = 4
+
+        # Options flow hint — large RVOL with low buzz = quiet accumulation
+        if rvol >= 5 and buzz_level <= 4:
+            options_flow = True  # proxy signal for quiet smart money
+
+        # Get company name
+        try:
+            company = ystock.info.get("shortName") or ystock.info.get("longName") or ticker
+        except:
+            company = ticker
+
+        return {
+            "ticker":       ticker,
+            "company":      company,
+            "price":        price,
+            "float_m":      float_m,
+            "short_int":    short_int,
+            "rvol":         rvol,
+            "catalyst":     catalyst,
+            "catalyst_type":catalyst_type,
+            "catalyst_desc":catalyst_desc,
+            "buzz_level":   buzz_level,
+            "upcoming_date":upcoming_date,
+            "options_flow": options_flow,
+            "si_rising":    si_rising,
+            "news_sources": news_sources,
+        }
+
+    except Exception as e:
+        print(f"  ⚠ {ticker}: {e}")
+        return None
+
+
+def run_real_scan() -> list:
+    """
+    Main entry point for real data scanning.
+    Pulls from Finviz, enriches with yfinance, returns candidates.
+    """
+    candidates = fetch_finviz_candidates()
+
+    if not candidates:
+        print("  ⚠ No real candidates found. Check your internet connection.")
+        print("  → Tip: Finviz sometimes rate-limits. Try again in a few minutes.")
+
+    print(f"  ✓ {len(candidates)} candidates ready for scoring")
+    return candidates
 
 
 
@@ -975,7 +1114,7 @@ def main():
 
         # In production: replace run_demo_scan() with your actual
         # data fetching logic (Polygon, Finviz, etc.)
-        candidates = run_demo_scan(conn, weights)
+        candidates = run_real_scan()
 
         # Score all candidates
         results = []
