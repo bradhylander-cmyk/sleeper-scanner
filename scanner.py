@@ -754,58 +754,68 @@ def print_report(conn):
 
 # ─── REAL DATA — FINVIZ SCREENER ─────────────────────────────────────────────
 
-def fetch_finviz_candidates() -> list:
+def fetch_candidates() -> list:
     """
-    Pull real stock candidates from Finviz's free screener.
-    Filters for: low float, high relative volume, low price, after-hours action.
-    No API key needed — uses their public screener URL.
-    Returns list of raw candidate dicts ready for score_stock().
+    Pull real stock candidates using yfinance screener.
+    Searches for stocks with high relative volume and low price —
+    the core filter for finding pre-gap sleepers.
+    No API key needed.
     """
-    import urllib.request
-    import re
+    import yfinance as yf
+    import time
 
-    print("\n  Fetching candidates from Finviz screener...")
+    print("\n  Fetching candidates via yfinance screener...")
 
-    # Finviz screener filters:
-    # sh_float_u5    = float under 5M
-    # sh_relvol_o2   = relative volume over 2x
-    # sh_price_u30   = price under $30
-    # sh_price_o0.5  = price over $0.50
-    # cap_smallover  = small cap and above (filters out shells)
-    # ta_change_u    = price changed today (active)
-    SCREENER_URL = (
-        "https://finviz.com/screener.ashx?v=111&f="
-        "sh_float_u10,sh_relvol_o2,sh_price_u30,sh_price_o0.5"
-        "&o=-relativevolume&r=1"
-    )
+    # These are known low-float, high-volatility tickers that
+    # the scanner uses as a starting universe. yfinance's screener
+    # API lets us pull the most active small caps each day.
+    # We pull the most active stocks under $30 and filter from there.
 
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
-    }
-
-    try:
-        req = urllib.request.Request(SCREENER_URL, headers=headers)
-        with urllib.request.urlopen(req, timeout=15) as resp:
-            html = resp.read().decode("utf-8", errors="ignore")
-    except Exception as e:
-        print(f"  ⚠ Finviz fetch failed: {e}")
-        print("  → Falling back to yfinance-only mode")
-        return []
-
-    # Parse ticker symbols from the screener table
-    # Finviz wraps tickers in a specific link pattern
-    tickers = re.findall(r'quote\.ashx\?t=([A-Z]{1,5})"', html)
-    tickers = list(dict.fromkeys(tickers))  # deduplicate, preserve order
-
-    if not tickers:
-        print("  ⚠ No tickers found in Finviz response (may be rate limited)")
-        return []
-
-    print(f"  ✓ Found {len(tickers)} candidates from Finviz: {', '.join(tickers[:10])}{'...' if len(tickers)>10 else ''}")
-
-    # Now enrich each ticker with yfinance data
     candidates = []
-    for ticker in tickers[:25]:  # cap at 25 to avoid rate limits
+
+    # Method 1: yfinance built-in screener for most active small caps
+    try:
+        screen = yf.screen(
+            "most_actives",
+            offset=0,
+            size=100,
+        )
+        quotes = screen.get("quotes", []) if screen else []
+        tickers_raw = [q.get("symbol","") for q in quotes if q.get("symbol")]
+        print(f"  ✓ Got {len(tickers_raw)} most-active tickers from yfinance")
+    except Exception as e:
+        print(f"  ⚠ yfinance screener failed: {e}")
+        tickers_raw = []
+
+    # Method 2: fallback — manually track high-vol small cap universe
+    # These are frequently active low-float stocks — scanner will filter
+    # by RVOL and price each night so only truly active ones score well
+    WATCHLIST = [
+        # Biotech / Pharma (most common gap-up sector)
+        "SAVA","ACMR","AGEN","ALDX","APTO","ARAV","ARQT","AUPH","AVDL",
+        "AVXL","AYALA","BCRX","BLPH","BNGO","BPTH","CPRX","CYCN","DMAC",
+        "EDSA","ENZC","FATE","FREQ","GOSS","HALO","HOOK","IFRX","INVA",
+        "IPIX","KPTI","LPTX","MESO","MGNX","NKTR","NVAX","NVCR","OCGN",
+        "ONTX","ORGO","PHAT","PROG","PRTK","PTGX","PULM","RCUS","SELB",
+        "SIGA","SLNO","SRNE","STOK","SURF","TACON","TLSA","TNXP","TRVI",
+        # Small cap high-vol
+        "CLOV","FFIE","IBRX","MVIS","MULN","NKLA","RIDE","WKHS","ZEV",
+        "AGRX","ALBT","ALPP","ATNF","CENN","COMS","DPRO","EBON","GFAI",
+        "GREE","IDEX","INPX","IQST","LIQT","LKCO","MMAT","MOBQ","NAKD",
+        "NILE","NSPR","NUVB","OBSV","ORPH","PRTY","RAVE","RNAZ","SHIP",
+    ]
+
+    if not tickers_raw:
+        tickers_raw = WATCHLIST
+        print(f"  → Using watchlist of {len(tickers_raw)} tickers")
+
+    # Filter and enrich
+    seen = set()
+    for ticker in tickers_raw:
+        if ticker in seen or len(candidates) >= 30:
+            break
+        seen.add(ticker)
+        time.sleep(0.3)
         stock = enrich_ticker(ticker)
         if stock:
             candidates.append(stock)
@@ -948,7 +958,7 @@ def run_real_scan() -> list:
     Main entry point for real data scanning.
     Pulls from Finviz, enriches with yfinance, returns candidates.
     """
-    candidates = fetch_finviz_candidates()
+    candidates = fetch_candidates()
 
     if not candidates:
         print("  ⚠ No real candidates found. Check your internet connection.")
